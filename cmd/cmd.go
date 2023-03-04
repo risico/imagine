@@ -1,5 +1,11 @@
 package cmd
 
+import (
+	"github.com/juju/errors"
+
+	"github.com/risico/imagine/src/server"
+)
+
 var CLI struct {
 	Start StartCMD `cmd:"" json:"start" help:"Starts the imagine application"`
 }
@@ -10,5 +16,10 @@ type StartCMD struct {
 }
 
 func (r *StartCMD) Run() error {
-	return nil
+	params := server.ServerParams{
+		Hostname: r.Hostname,
+		Port:     r.Port,
+	}
+	s := server.NewServer(params)
+	return errors.Trace(s.Start())
 }

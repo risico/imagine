@@ -2,7 +2,7 @@ package storage
 
 type S3Storage struct{}
 
-var _ FS = &S3Storage{}
+var _ FS = new(S3Storage)
 
 func (l *S3Storage) Upload(filename string, data []byte) error {
 	return nil
