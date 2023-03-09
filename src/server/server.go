@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -46,6 +47,13 @@ func (s *Server) Start() error {
 	r := gin.Default()
 
 	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"message": "pong",
+		})
+	})
+
+	// small admin page
+	r.GET("/admin", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
 		})
@@ -111,8 +119,14 @@ func (s *Server) Start() error {
 		c.JSON(http.StatusOK, gin.H{"file": name})
 	})
 
-	r.GET("/:id/i.:format", func(c *gin.Context) {
-		id := c.Param("id")
+	r.GET("/:filename", func(c *gin.Context) {
+		var id, format string
+		parts := strings.Split(c.Param("filename"), ".")
+		if len(parts) == 1 {
+			id = parts[0]
+		} else if len(parts) == 2 {
+			format = parts[2]
+		}
 
 		params := imageParams{}
 
@@ -140,8 +154,7 @@ func (s *Server) Start() error {
 			params.Thumbnail = t
 		}
 
-		params.Format = c.Param("format")
-
+		params.Format = format
 		img, err := processImage(fmt.Sprintf("uploads/%s", id), params)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

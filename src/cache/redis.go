@@ -4,9 +4,7 @@ type RedisCache struct {
 	params *RedisCacheParams
 }
 
-type RedisCacheParams struct {
-	radixClient *radix.Client
-}
+type RedisCacheParams struct{}
 
 func NewRedisCache(params RedisCacheParams) *RedisCache {
 	return &RedisCache{
