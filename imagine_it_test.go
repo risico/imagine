@@ -9,10 +9,15 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/risico/imagine"
+	"github.com/risico/imagine/src/cache"
+	"github.com/risico/imagine/src/storage"
 )
 
 func TestUploadHandler(t *testing.T) {
-	i, err := imagine.New(imagine.Params{})
+	i, err := imagine.New(imagine.Params{
+		Storage: &storage.LocalStorage{},
+		Cache:   &cache.InMemoryCache{},
+	})
 	assert.NoError(t, err)
 
 	ts := httptest.NewUnstartedServer(i.UploadHandlerFunc())
@@ -24,7 +29,10 @@ func TestUploadHandler(t *testing.T) {
 }
 
 func TestGetImagineHandler(t *testing.T) {
-	i, err := imagine.New(imagine.Params{})
+	i, err := imagine.New(imagine.Params{
+		Storage: &storage.LocalStorage{},
+		Cache:   &cache.InMemoryCache{},
+	})
 	assert.NoError(t, err)
 
 	ts := httptest.NewUnstartedServer(i.GetHandlerFunc())

@@ -2,13 +2,13 @@ package storage
 
 type LocalStorage struct{}
 
-var _ FS = &LocalStorage{}
+var _ Storage = new(LocalStorage)
 
-func (l *LocalStorage) Upload(filename string, data []byte) error {
+func (l *LocalStorage) Set(filename string, data []byte) error {
 	return nil
 }
 
-func (l *LocalStorage) Download(filename string) ([]byte, error) {
+func (l *LocalStorage) Get(filename string) ([]byte, error) {
 	return nil, nil
 }
 

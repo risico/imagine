@@ -11,7 +11,7 @@ import (
 
 type Params struct {
 	Cache   cache.Cacher
-	Storage storage.FS
+	Storage storage.Storage
 }
 
 // Imagine is our main application struct
@@ -43,7 +43,14 @@ func (i *Imagine) getHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	img, err := i.params.Storage.Get(slug)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	fmt.Println("slug", slug)
+	fmt.Println("img", string(img))
 }
 
 func (i *Imagine) uploadHandlerFunc(w http.ResponseWriter, r *http.Request) {
