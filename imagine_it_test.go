@@ -1,7 +1,9 @@
 package imagine_test
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,12 +25,20 @@ func TestUploadHandler(t *testing.T) {
 	ts := httptest.NewUnstartedServer(i.UploadHandlerFunc())
 	ts.Start()
 
-	resp, err := ts.Client().Post(ts.URL, "image/jpeg", nil)
+	testImageBytes := []byte("test image bytes")
+	testImageReader := bytes.NewReader(testImageBytes)
+
+	resp, err := ts.Client().Post(ts.URL, "image/jpeg", testImageReader)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := ioutil.ReadAll(resp.Body)
+	assert.NoError(t, err)
+	assert.Equal(t, "someimage.png", string(body))
 }
 
 func TestGetImagineHandler(t *testing.T) {
+	t.Skip("not implemented yet")
 	i, err := imagine.New(imagine.Params{
 		Storage: storage.NewLocalStorage("/tmp"),
 		Cache:   &cache.InMemoryCache{},

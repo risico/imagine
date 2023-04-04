@@ -1,7 +1,11 @@
 package imagine
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 
@@ -54,7 +58,35 @@ func (i *Imagine) getHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (i *Imagine) uploadHandlerFunc(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("r.URL.Path", r.URL.Path)
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer file.Close()
+
+	imgReader := io.LimitReader(file, 1000000)
+	imgBytes, err := ioutil.ReadAll(imgReader)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	hash := getMD5Hash(imgBytes)
+	fmt.Println("hash", hash)
+
+	err = i.params.Storage.Set(hash, imgBytes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 var matcher = regexp.MustCompile(`[a-zA-Z0-9]+\.[a-zA-Z]{3,4}$`)
@@ -66,4 +98,10 @@ func parseSlugFromPath(path string) (string, error) {
 	}
 
 	return s, nil
+}
+
+// generate the md5 hash of the image
+func getMD5Hash(img []byte) string {
+	hash := md5.Sum(img)
+	return hex.EncodeToString(hash[:])
 }
