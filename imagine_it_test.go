@@ -15,7 +15,7 @@ import (
 
 func TestUploadHandler(t *testing.T) {
 	i, err := imagine.New(imagine.Params{
-		Storage: &storage.LocalStorage{},
+		Storage: storage.NewLocalStorage("/tmp"),
 		Cache:   &cache.InMemoryCache{},
 	})
 	assert.NoError(t, err)
@@ -30,7 +30,7 @@ func TestUploadHandler(t *testing.T) {
 
 func TestGetImagineHandler(t *testing.T) {
 	i, err := imagine.New(imagine.Params{
-		Storage: &storage.LocalStorage{},
+		Storage: storage.NewLocalStorage("/tmp"),
 		Cache:   &cache.InMemoryCache{},
 	})
 	assert.NoError(t, err)
