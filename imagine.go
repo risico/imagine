@@ -78,7 +78,6 @@ func (i *Imagine) uploadHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hash := getMD5Hash(imgBytes)
-	fmt.Println("hash", hash)
 
 	err = i.params.Storage.Set(hash, imgBytes)
 	if err != nil {
@@ -87,6 +86,7 @@ func (i *Imagine) uploadHandlerFunc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(hash))
 }
 
 var matcher = regexp.MustCompile(`[a-zA-Z0-9]+\.[a-zA-Z]{3,4}$`)
