@@ -1,4 +1,4 @@
-package storage
+package imagine
 
 // there might be packages out there that can abstract localhost + s3
 type Storage interface {

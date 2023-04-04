@@ -16,12 +16,11 @@ import (
 
 	"github.com/risico/imagine"
 	"github.com/risico/imagine/src/cache"
-	"github.com/risico/imagine/src/storage"
 )
 
 func TestUploadHandler(t *testing.T) {
 	i, err := imagine.New(imagine.Params{
-		Storage: storage.NewLocalStorage("/tmp"),
+		Storage: imagine.NewLocalStorage("/tmp"),
 		Cache:   &cache.InMemoryCache{},
 	})
 	assert.NoError(t, err)
@@ -37,7 +36,7 @@ func TestUploadHandler(t *testing.T) {
 		defer writer.Close()
 		// We create the form data field 'fileupload'
 		// which returns another writer to write the actual file
-		part, err := writer.CreateFormFile("file", "someimg.png")
+		part, err := writer.CreateFormFile("file", "randomimage.png")
 		if err != nil {
 			t.Error(err)
 		}
@@ -69,7 +68,7 @@ func TestUploadHandler(t *testing.T) {
 func TestGetImagineHandler(t *testing.T) {
 	t.Skip("not implemented yet")
 	i, err := imagine.New(imagine.Params{
-		Storage: storage.NewLocalStorage("/tmp"),
+		Storage: imagine.NewLocalStorage("/tmp"),
 		Cache:   &cache.InMemoryCache{},
 	})
 	assert.NoError(t, err)
