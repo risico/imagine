@@ -8,6 +8,7 @@ require (
 	github.com/h2non/bimg v1.1.9
 	github.com/juju/errors v1.0.0
 	github.com/stretchr/testify v1.8.1
+	go.etcd.io/bbolt v1.3.7
 )
 
 require (
