@@ -3,12 +3,12 @@ module github.com/risico/imagine
 go 1.19
 
 require (
-	github.com/alecthomas/kong v0.7.1
 	github.com/gin-gonic/gin v1.8.2
 	github.com/google/uuid v1.3.0
 	github.com/h2non/bimg v1.1.9
 	github.com/juju/errors v1.0.0
 	github.com/stretchr/testify v1.8.1
+	go.etcd.io/bbolt v1.3.7
 )
 
 require (
@@ -29,7 +29,7 @@ require (
 	github.com/ugorji/go/codec v1.2.7 // indirect
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e // indirect
 	golang.org/x/net v0.4.0 // indirect
-	golang.org/x/sys v0.3.0 // indirect
+	golang.org/x/sys v0.4.0 // indirect
 	golang.org/x/text v0.5.0 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

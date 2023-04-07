@@ -8,13 +8,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"regexp"
-
-	"github.com/risico/imagine/src/cache"
 )
 
 type Params struct {
-	Cache   cache.Cacher
-	Storage Storage
+	Cache   Store
+	Storage Store
 	Hasher  Hasher
 
 	// MaxImageSize is the maximum size of an image in bytes
