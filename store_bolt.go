@@ -5,11 +5,13 @@ import (
 	bolt "go.etcd.io/bbolt"
 )
 
+
 // boltStore is a Store implementation that uses BoltDB
 type boltStore struct {
 	params *BoltStoreParams
 	db     *bolt.DB
 }
+
 
 // BoltStoreParams are the parameters for creating a new BoltStore
 type BoltStoreParams struct {
@@ -37,6 +39,7 @@ func NewBoltStore(params BoltStoreParams) (Store, error) {
 func (b *boltStore) Set(filename string, data []byte) error {
 	return nil
 }
+
 
 func (b *boltStore) Get(filename string) ([]byte, bool, error) {
 	return nil, false, nil

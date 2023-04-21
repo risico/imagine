@@ -35,6 +35,7 @@ func (m *MemoryStore) Set(key string, data []byte) error {
 	return nil
 }
 
+
 func (m *MemoryStore) Get(key string) ([]byte, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
