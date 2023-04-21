@@ -11,17 +11,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/risico/imagine"
-	"github.com/risico/imagine/src/cache"
 )
 
 func TestUploadHandler(t *testing.T) {
+	storage, err := imagine.NewLocalStorage(imagine.LocalStoreParams{
+		Path: "/tmp/imagine",
+	})
+	assert.NoError(t, err)
 	i, err := imagine.New(imagine.Params{
-		Storage: imagine.NewLocalStorage("/tmp"),
-		Cache:   &cache.InMemoryCache{},
+		Storage: storage,
+		Cache:   imagine.NewInMemoryStorage(imagine.MemoryStoreParams{}),
 	})
 	assert.NoError(t, err)
 
@@ -67,9 +71,17 @@ func TestUploadHandler(t *testing.T) {
 
 func TestGetImagineHandler(t *testing.T) {
 	t.Skip("not implemented yet")
+
+	storage, err := imagine.NewLocalStorage(imagine.LocalStoreParams{
+		Path: "/tmp/imagine",
+	})
+	assert.NoError(t, err)
+
 	i, err := imagine.New(imagine.Params{
-		Storage: imagine.NewLocalStorage("/tmp"),
-		Cache:   &cache.InMemoryCache{},
+		Storage: storage,
+		Cache: imagine.NewInMemoryStorage(imagine.MemoryStoreParams{
+			TTL: 1 * time.Hour,
+		}),
 	})
 	assert.NoError(t, err)
 

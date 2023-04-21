@@ -1,7 +1,6 @@
 package imagine
 
 import (
-	"errors"
 	"sync"
 	"time"
 )
@@ -36,15 +35,15 @@ func (m *MemoryStore) Set(key string, data []byte) error {
 	return nil
 }
 
-func (m *MemoryStore) Get(key string) ([]byte, error) {
+func (m *MemoryStore) Get(key string) ([]byte, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if data, ok := m.cache[key]; ok {
-		return data, nil
+		return data, true, nil
 	}
 
-	return nil, errors.New("storage.Get: key not found")
+	return nil, false, nil
 }
 
 func (m *MemoryStore) Delete(key string) error {

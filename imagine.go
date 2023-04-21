@@ -1,15 +1,15 @@
 package imagine
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"regexp"
 )
 
+// Params are the parameters used to create a new Imagine application
 type Params struct {
 	Cache   Store
 	Storage Store
@@ -19,6 +19,7 @@ type Params struct {
 	MaxImageSize int
 }
 
+// withDefaults sets the default values for the parameters
 func (p *Params) withDefaults() {
 	if p.MaxImageSize == 0 {
 		p.MaxImageSize = 1024 * 1024
@@ -52,6 +53,7 @@ func New(params Params) (*Imagine, error) {
 	}, nil
 }
 
+// getHandler handles the GET requests
 func (i *Imagine) getHandler(w http.ResponseWriter, r *http.Request) {
 	slug, err := parseSlugFromPath(r.URL.Path)
 	if err != nil {
@@ -59,14 +61,33 @@ func (i *Imagine) getHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	img, err := i.params.Storage.Get(slug)
-	if err != nil {
+    // check if the file is first in cache
+    if img, found, err := i.params.Cache.Get(slug); found {
+        // write the image to the response
+        w.Header().Set("Content-Type", "image/png")
+        w.Write(img)
+        return
+    } else if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+
+    if img, found, err := i.params.Storage.Get(slug); !found {
+        http.Error(w, "not found", http.StatusNotFound)
+        return
+    } else if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
+	} else {
+        w.Header().Set("Content-Type", "image/png")
+        w.Write(img)
 
-	fmt.Println("slug", slug)
-	fmt.Println("img", string(img))
+        // store the image in cache
+        err := i.params.Cache.Set(slug, img)
+        if err != nil {
+            log.Printf("error storing image in cache: %s", err)
+        }
+    }
 }
 
 func (i *Imagine) uploadHandlerFunc(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +116,11 @@ func (i *Imagine) uploadHandlerFunc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash := getMD5Hash(imgBytes)
+    hash, err := i.params.Hasher.Hash(imgBytes)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
 
 	err = i.params.Storage.Set(hash, imgBytes)
 	if err != nil {
@@ -120,12 +145,6 @@ func parseSlugFromPath(path string) (string, error) {
 	}
 
 	return s, nil
-}
-
-// generate the md5 hash of the image
-func getMD5Hash(img []byte) string {
-	hash := md5.Sum(img)
-	return hex.EncodeToString(hash[:])
 }
 
 // validateImage checks if the image is a valid image based on
