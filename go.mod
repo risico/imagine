@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/h2non/bimg v1.1.9
 	github.com/juju/errors v1.0.0
+	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/stretchr/testify v1.8.3
 	go.etcd.io/bbolt v1.3.7
 )
