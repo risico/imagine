@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -32,7 +33,7 @@ func (p *Params) withDefaults() {
 	}
 
 	if p.Hasher == nil {
-		p.Hasher = MD5Hasher()
+		p.Hasher = SHA256Hasher()
 	}
 }
 
@@ -95,28 +96,49 @@ type ProcessedImage struct {
 // Get is the main entry point for the Imagine application. It returns the
 // image as an array of bytes
 func (i *Imagine) Get(filename string, params *ImageParams) (*ProcessedImage, error) {
+	fmt.Printf("[Imagine] Get called for filename: %s\n", filename)
+	
 	cacheKey, err := i.cacheKey(filename, params)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	fmt.Printf("[Imagine] Cache key: %s\n", cacheKey)
 
 	// try to grab the image from cache
 	var image []byte
 	image, found, err := i.params.Cache.Get(cacheKey)
 	if err != nil {
-		return nil, errors.Trace(err)
+		fmt.Printf("[Imagine] Cache.Get error: %v (found: %v)\n", err, found)
+		// If it's just a cache miss (not found), that's OK - continue to storage
+		if errors.Is(err, ErrKeyNotFound) {
+			fmt.Printf("[Imagine] Cache miss is expected, checking storage\n")
+			err = nil // Clear the error for cache miss
+		} else {
+			return nil, errors.Trace(err)
+		}
 	} else if found {
+		fmt.Printf("[Imagine] Found in cache, returning cached image\n")
 		bi := bimg.NewImage(image)
 		return &ProcessedImage{Image: bi.Image(), Type: bi.Type()}, nil
 	}
 
 	// get it from storage if not in cache
+	fmt.Printf("[Imagine] Not in cache, checking storage for filename: %s\n", filename)
 	image, found, err = i.params.Storage.Get(filename)
 	if err != nil {
+		fmt.Printf("[Imagine] Storage.Get error: %v (found: %v), Error type: %T\n", err, found, err)
+		// If it's just not found, return a placeholder
+		// Check both the error value and the error message
+		if err == ErrKeyNotFound || errors.Is(err, ErrKeyNotFound) || err.Error() == "key not found" {
+			fmt.Printf("[Imagine] Image not found, generating placeholder\n")
+			return i.getPlaceholderImage(params)
+		}
 		return nil, errors.Trace(err)
 	} else if !found {
-		return nil, ErrImageNotFound
+		fmt.Printf("[Imagine] Image not found in storage, returning placeholder\n")
+		return i.getPlaceholderImage(params)
 	}
+	fmt.Printf("[Imagine] Found in storage, size: %d bytes\n", len(image))
 
 	// apply the requested transformations
 	processedImage, err := i.processImage(image, params)
@@ -146,20 +168,121 @@ func (i *Imagine) cacheKey(filename string, params *ImageParams) (string, error)
 }
 
 func (i *Imagine) Upload(data []byte) (string, error) {
-	// use the file hash as the filename
-	filename, err := i.params.Hasher.Hash(data)
-	if err != nil {
-		return "", errors.Trace(err)
-	}
-
+	fmt.Printf("[Imagine] Upload called with data size: %d bytes (%.2f MB)\n", len(data), float64(len(data))/1024/1024)
+	
 	if isValid := validateImage(data); !isValid {
+		contentType := http.DetectContentType(data)
+		fmt.Printf("[Imagine] Invalid image type. Detected content type: %s\n", contentType)
 		return "", errors.New("invalid image type")
 	}
+	fmt.Printf("[Imagine] Image validation passed\n")
+
+	// Auto-orient and optimize the image before storing
+	img := bimg.NewImage(data)
+	
+	// Get metadata to check orientation and size
+	metadata, err := img.Metadata()
+	if err == nil {
+		fmt.Printf("[Imagine] Original image: %dx%d, orientation: %d\n", 
+			metadata.Size.Width, metadata.Size.Height, metadata.Orientation)
+		
+		// Build options for optimization
+		options := bimg.Options{
+			StripMetadata: true, // Remove metadata
+		}
+		
+		// Auto-rotate if needed
+		if metadata.Orientation > 1 {
+			fmt.Printf("[Imagine] Auto-rotating image\n")
+			data, err = img.AutoRotate()
+			if err != nil {
+				fmt.Printf("[Imagine] Warning: Failed to auto-rotate: %v\n", err)
+			} else {
+				img = bimg.NewImage(data) // Recreate with rotated data
+			}
+		}
+		
+		// If image is very large (>4096px), resize it for storage optimization
+		if metadata.Size.Width > 4096 || metadata.Size.Height > 4096 {
+			fmt.Printf("[Imagine] Image is very large, resizing to max 4096px for storage\n")
+			if metadata.Size.Width > metadata.Size.Height {
+				options.Width = 4096
+			} else {
+				options.Height = 4096
+			}
+		}
+		
+		// Ensure file is under 10MB
+		targetSize := 10 * 1024 * 1024 // 10MB
+		currentSize := len(data)
+		
+		if currentSize > targetSize {
+			fmt.Printf("[Imagine] File size %.2f MB exceeds 10MB limit, optimizing...\n", float64(currentSize)/1024/1024)
+			
+			// Calculate dimension reduction needed
+			reductionFactor := math.Sqrt(float64(targetSize) / float64(currentSize))
+			
+			// Apply dimension reduction if not already set
+			if options.Width == 0 && options.Height == 0 {
+				newWidth := int(float64(metadata.Size.Width) * reductionFactor)
+				newHeight := int(float64(metadata.Size.Height) * reductionFactor)
+				
+				// Cap at 4096px max
+				if newWidth > 4096 {
+					newWidth = 4096
+				}
+				if newHeight > 4096 {
+					newHeight = 4096
+				}
+				
+				if metadata.Size.Width > metadata.Size.Height {
+					options.Width = newWidth
+				} else {
+					options.Height = newHeight
+				}
+				
+				fmt.Printf("[Imagine] Resizing to approximately %dx%d\n", newWidth, newHeight)
+			}
+			
+			// Use JPEG compression for large files (unless PNG with transparency)
+			if metadata.Type != "png" {
+				options.Type = bimg.JPEG
+				options.Quality = 92 // Good quality but more compression
+			}
+		} else if len(data) > 5*1024*1024 && metadata.Type != "png" { 
+			// For files between 5-10MB, still optimize
+			fmt.Printf("[Imagine] File over 5MB, applying compression\n")
+			options.Type = bimg.JPEG
+			options.Quality = 95
+		}
+		
+		// Apply optimizations if any were set
+		if options.Width > 0 || options.Height > 0 || options.Type > 0 {
+			data, err = img.Process(options)
+			if err != nil {
+				fmt.Printf("[Imagine] Warning: Failed to optimize: %v\n", err)
+				// Continue with original data if optimization fails
+			} else {
+				fmt.Printf("[Imagine] Optimized to %d bytes (%.2f MB)\n", 
+					len(data), float64(len(data))/1024/1024)
+			}
+		}
+	}
+	
+	// use the file hash as the filename (after processing)
+	filename, err := i.params.Hasher.Hash(data)
+	if err != nil {
+		fmt.Printf("[Imagine] Failed to hash data: %v\n", err)
+		return "", errors.Trace(err)
+	}
+	fmt.Printf("[Imagine] Generated hash filename: %s\n", filename)
 
 	err = i.params.Storage.Set(filename, data)
 	if err != nil {
+		fmt.Printf("[Imagine] Failed to store image: %v\n", err)
 		return "", errors.Trace(err)
 	}
+	fmt.Printf("[Imagine] Successfully stored image with filename: %s\n", filename)
 
 	return filename, nil
 }
@@ -227,6 +350,9 @@ type ImageParams struct {
 
 	// Gravity for smart cropping: center, north, south, east, west, etc.
 	Gravity string
+	
+	// Preset for common configurations: thumb, small, medium, large, hero
+	Preset string
 }
 
 // create a cache key from the image params
@@ -358,6 +484,85 @@ func (i *Imagine) ParamsFromQueryString(query string) (*ImageParams, error) {
 			return nil, errors.New("invalid gravity value")
 		}
 	}
+	
+	// Handle presets
+	if queryValues.Has("preset") {
+		p.Preset = queryValues.Get("preset")
+		// Apply preset defaults (will be overridden by specific params if provided)
+		switch p.Preset {
+		case "thumb":
+			// Small thumbnail - 150x150 square, lower quality
+			if p.Width == 0 && p.Height == 0 {
+				p.Width = 150
+				p.Height = 150
+				p.Fit = "cover"
+			}
+			if p.Quality == 0 {
+				p.Quality = 80
+			}
+			if p.Format == "" {
+				p.Format = "webp"
+			}
+		case "small":
+			// Small image - 400px wide
+			if p.Width == 0 {
+				p.Width = 400
+			}
+			if p.Quality == 0 {
+				p.Quality = 85
+			}
+			if p.Format == "" {
+				p.Format = "webp"
+			}
+		case "medium":
+			// Medium image - 800px wide
+			if p.Width == 0 {
+				p.Width = 800
+			}
+			if p.Quality == 0 {
+				p.Quality = 85
+			}
+			if p.Format == "" {
+				p.Format = "webp"
+			}
+		case "large":
+			// Large image - 1200px wide
+			if p.Width == 0 {
+				p.Width = 1200
+			}
+			if p.Quality == 0 {
+				p.Quality = 85
+			}
+			if p.Format == "" {
+				p.Format = "webp"
+			}
+		case "hero":
+			// Hero/banner image - 1920px wide, higher quality
+			if p.Width == 0 {
+				p.Width = 1920
+			}
+			if p.Quality == 0 {
+				p.Quality = 90
+			}
+			if p.Format == "" {
+				p.Format = "webp"
+			}
+		case "placeholder":
+			// Tiny blurred placeholder - 20px wide, very low quality
+			if p.Width == 0 {
+				p.Width = 20
+			}
+			if p.Quality == 0 {
+				p.Quality = 20
+			}
+			if p.Blur == 0 {
+				p.Blur = 5
+			}
+			if p.Format == "" {
+				p.Format = "webp"
+			}
+		}
+	}
 
 	return &p, nil
 }
@@ -376,8 +581,51 @@ func validateImage(img []byte) bool {
 
 // processImage applies the requested transformations to the image via the supplied params
 func (i *Imagine) processImage(image []byte, params *ImageParams) (*bimg.Image, error) {
+	// First auto-rotate the image if needed
+	img := bimg.NewImage(image)
+	metadata, err := img.Metadata()
+	if err == nil && metadata.Orientation > 1 {
+		// Auto-rotate based on EXIF orientation
+		image, err = img.AutoRotate()
+		if err != nil {
+			// Log but continue with original image
+			fmt.Printf("[Imagine] Warning: Failed to auto-rotate in processImage: %v\n", err)
+		}
+		// Recreate img with rotated data
+		img = bimg.NewImage(image)
+	}
+	
 	options := bimg.Options{}
-	var err error
+	
+	// Apply smart web defaults if no specific params are provided
+	hasTransformations := params.Width > 0 || params.Height > 0 || params.Thumbnail > 0 || 
+		params.Format != "" || params.Quality > 0 || params.Fit != ""
+	
+	if !hasTransformations {
+		// Get image dimensions to apply smart defaults
+		size, _ := img.Size()
+		
+		// Apply web-optimized defaults
+		// Limit max dimension to 2048px for web display
+		if size.Width > 2048 || size.Height > 2048 {
+			if size.Width > size.Height {
+				options.Width = 2048
+			} else {
+				options.Height = 2048
+			}
+		}
+		
+		// Default to WebP format for better compression
+		options.Type = bimg.WEBP
+		
+		// Default quality of 85 for good balance
+		options.Quality = 85
+		
+		// Enable strip to remove metadata for smaller files
+		options.StripMetadata = true
+		
+		fmt.Printf("[Imagine] Applying web defaults: max 2048px, WebP, quality 85\n")
+	}
 
 	// Handle sizing based on fit mode
 	if params.Fit != "" && params.Width > 0 && params.Height > 0 {
@@ -463,10 +711,18 @@ func (i *Imagine) processImage(image []byte, params *ImageParams) (*bimg.Image, 
 		options.Interpretation = bimg.InterpretationBW
 	}
 
-	// Quality
+	// Quality (default to 85 if not specified)
 	if params.Quality > 0 {
 		options.Quality = params.Quality
+	} else if !hasTransformations {
+		// Already set above
+	} else {
+		// Default quality for any transformation
+		options.Quality = 85
 	}
+	
+	// Always strip metadata to reduce file size
+	options.StripMetadata = true
 
 	// Format conversion
 	if params.Format != "" {
@@ -521,6 +777,67 @@ func getGravity(gravity string) bimg.Gravity {
 		}
 		return bimg.GravityCentre
 	}
+}
+
+// getPlaceholderImage returns a placeholder image when the requested image is not found
+func (i *Imagine) getPlaceholderImage(params *ImageParams) (*ProcessedImage, error) {
+	// Determine size for placeholder
+	width := 400
+	height := 300
+	if params != nil {
+		if params.Width > 0 {
+			width = params.Width
+		}
+		if params.Height > 0 {
+			height = params.Height
+		}
+		// Ensure minimum size for visibility
+		if width < 100 {
+			width = 100
+		}
+		if height < 100 {
+			height = 100
+		}
+	}
+	
+	// Create a minimal valid gray PNG (10x10 pixels)
+	// This is more likely to work with bimg than a 1x1
+	// Using a pre-generated 10x10 gray PNG
+	baseImage := []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x0a,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x02, 0x50, 0x58, 0xea, 0x00, 0x00, 0x00,
+		0x15, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x62, 0xfa, 0xcf, 0xc0, 0xc0,
+		0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0xc0, 0x00, 0x00, 0x00, 0xff, 0x00, 0x01,
+		0x21, 0xd5, 0x05, 0xfe, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+		0xae, 0x42, 0x60, 0x82,
+	}
+	
+	// Create bimg image from base
+	img := bimg.NewImage(baseImage)
+	
+	// Resize to desired dimensions with gray background
+	options := bimg.Options{
+		Width:      width,
+		Height:     height,
+		Type:       bimg.PNG,
+		Background: bimg.Color{R: 240, G: 240, B: 240}, // Light gray
+		Force:      true, // Force exact dimensions
+	}
+	
+	processed, err := img.Process(options)
+	if err != nil {
+		fmt.Printf("[Imagine] Failed to create placeholder image: %v\n", err)
+		// Return an error but don't crash - EditorJS will handle it
+		return nil, errors.Trace(err)
+	}
+	
+	fmt.Printf("[Imagine] Created placeholder image: %dx%d\n", width, height)
+	
+	return &ProcessedImage{
+		Image: processed,
+		Type:  "image/png",
+	}, nil
 }
 
 // pathMatcher matches any path that has some chars and ends in an extension.
