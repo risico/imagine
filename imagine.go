@@ -877,6 +877,24 @@ func (i *Imagine) Delete(filename string) error {
 	return nil
 }
 
+// GetOriginal returns the stored original bytes without any processing,
+// caching, or placeholder fallback.
+func (i *Imagine) GetOriginal(filename string) ([]byte, error) {
+	if i.params.Storage == nil {
+		return nil, errors.New("storage not configured")
+	}
+
+	data, found, err := i.params.Storage.Get(filename)
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	if !found {
+		return nil, ErrKeyNotFound
+	}
+
+	return data, nil
+}
+
 // ImageInfo contains metadata about a stored image
 type ImageInfo struct {
 	Hash      string
